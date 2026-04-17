@@ -1,0 +1,41 @@
+services:
+  web-frontend:
+    build:
+      context: .
+      dockerfile: ./artifacts/pos-rental/Dockerfile
+      args:
+        PORT: 3000
+        BASE_PATH: /
+    container_name: web-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - api-backend
+
+  api-backend:
+    build:
+      context: ./artifacts/api-backend-go
+      dockerfile: Dockerfile
+    container_name: api-backend
+    environment:
+      PORT: 8080
+      DATABASE_URL: postgres://postgres:postgres@db-postgres:5432/pos_rental?sslmode=disable
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db-postgres
+
+  db-postgres:
+    image: postgres:16-alpine
+    container_name: db-postgres
+    environment:
+      POSTGRES_DB: pos_rental
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+volumes:
+  postgres-data:

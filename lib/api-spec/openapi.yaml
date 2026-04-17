@@ -1,0 +1,1346 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API specification for Rental Car POS & Management System
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: vehicles
+    description: Fleet / vehicle management
+  - name: customers
+    description: Customer management
+  - name: bookings
+    description: Booking / reservation management
+  - name: transactions
+    description: POS transactions and payments
+  - name: reports
+    description: Reporting and analytics
+  - name: users
+    description: System users and auth
+  - name: maintenance
+    description: Vehicle maintenance logs
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  # ─── VEHICLES ────────────────────────────────────────────────────────────────
+
+  /vehicles:
+    get:
+      operationId: listVehicles
+      tags: [vehicles]
+      summary: List all vehicles
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: ["string", "null"]
+            enum: [available, rented, maintenance, null]
+        - name: ownership
+          in: query
+          schema:
+            type: ["string", "null"]
+            enum: [internal, external, null]
+      responses:
+        "200":
+          description: List of vehicles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Vehicle"
+    post:
+      operationId: createVehicle
+      tags: [vehicles]
+      summary: Add a new vehicle
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateVehicleBody"
+      responses:
+        "201":
+          description: Created vehicle
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Vehicle"
+
+  /vehicles/{id}:
+    get:
+      operationId: getVehicle
+      tags: [vehicles]
+      summary: Get a vehicle by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Vehicle detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Vehicle"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateVehicle
+      tags: [vehicles]
+      summary: Update a vehicle
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateVehicleBody"
+      responses:
+        "200":
+          description: Updated vehicle
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Vehicle"
+    delete:
+      operationId: deleteVehicle
+      tags: [vehicles]
+      summary: Delete a vehicle
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ─── MAINTENANCE ──────────────────────────────────────────────────────────────
+
+  /vehicles/{vehicleId}/maintenance:
+    get:
+      operationId: listMaintenanceLogs
+      tags: [maintenance]
+      summary: List maintenance logs for a vehicle
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Maintenance logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MaintenanceLog"
+    post:
+      operationId: createMaintenanceLog
+      tags: [maintenance]
+      summary: Create a maintenance log entry
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMaintenanceLogBody"
+      responses:
+        "201":
+          description: Created log
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaintenanceLog"
+
+  # ─── CUSTOMERS ────────────────────────────────────────────────────────────────
+
+  /customers:
+    get:
+      operationId: listCustomers
+      tags: [customers]
+      summary: List all customers
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: ["string", "null"]
+      responses:
+        "200":
+          description: List of customers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Customer"
+    post:
+      operationId: createCustomer
+      tags: [customers]
+      summary: Create a customer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCustomerBody"
+      responses:
+        "201":
+          description: Created customer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+
+  /customers/{id}:
+    get:
+      operationId: getCustomer
+      tags: [customers]
+      summary: Get a customer by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Customer detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateCustomer
+      tags: [customers]
+      summary: Update a customer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCustomerBody"
+      responses:
+        "200":
+          description: Updated customer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+
+  # ─── BOOKINGS ─────────────────────────────────────────────────────────────────
+
+  /bookings:
+    get:
+      operationId: listBookings
+      tags: [bookings]
+      summary: List all bookings
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: ["string", "null"]
+            enum: [pending, active, completed, cancelled, null]
+        - name: vehicleId
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: startDate
+          in: query
+          schema:
+            type: ["string", "null"]
+        - name: endDate
+          in: query
+          schema:
+            type: ["string", "null"]
+      responses:
+        "200":
+          description: List of bookings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Booking"
+    post:
+      operationId: createBooking
+      tags: [bookings]
+      summary: Create a new booking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBookingBody"
+      responses:
+        "201":
+          description: Created booking
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+
+  /bookings/{id}:
+    get:
+      operationId: getBooking
+      tags: [bookings]
+      summary: Get booking by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Booking detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateBooking
+      tags: [bookings]
+      summary: Update a booking
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBookingBody"
+      responses:
+        "200":
+          description: Updated booking
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+
+  /bookings/{id}/checkin:
+    post:
+      operationId: checkinBooking
+      tags: [bookings]
+      summary: Check-in a booking (record start KM)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckinBody"
+      responses:
+        "200":
+          description: Updated booking after check-in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+
+  /bookings/{id}/checkout:
+    post:
+      operationId: checkoutBooking
+      tags: [bookings]
+      summary: Check-out a booking (record end KM + additional charges)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckoutBody"
+      responses:
+        "200":
+          description: Updated booking after checkout
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+
+  # ─── TRANSACTIONS ─────────────────────────────────────────────────────────────
+
+  /transactions:
+    get:
+      operationId: listTransactions
+      tags: [transactions]
+      summary: List all transactions
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: ["string", "null"]
+            enum: [unpaid, paid, partial, null]
+        - name: startDate
+          in: query
+          schema:
+            type: ["string", "null"]
+        - name: endDate
+          in: query
+          schema:
+            type: ["string", "null"]
+      responses:
+        "200":
+          description: List of transactions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Transaction"
+    post:
+      operationId: createTransaction
+      tags: [transactions]
+      summary: Create a transaction / invoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTransactionBody"
+      responses:
+        "201":
+          description: Created transaction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transaction"
+
+  /transactions/{id}:
+    get:
+      operationId: getTransaction
+      tags: [transactions]
+      summary: Get transaction by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Transaction detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transaction"
+    patch:
+      operationId: updateTransaction
+      tags: [transactions]
+      summary: Update a transaction (e.g. mark as paid)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTransactionBody"
+      responses:
+        "200":
+          description: Updated transaction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transaction"
+
+  # ─── REPORTS ──────────────────────────────────────────────────────────────────
+
+  /reports/dashboard:
+    get:
+      operationId: getDashboardSummary
+      tags: [reports]
+      summary: Dashboard summary — revenue, booking counts, fleet status
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /reports/revenue:
+    get:
+      operationId: getRevenueReport
+      tags: [reports]
+      summary: Revenue report over a date range
+      parameters:
+        - name: startDate
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: endDate
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: groupBy
+          in: query
+          schema:
+            type: ["string", "null"]
+            enum: [day, week, month, null]
+      responses:
+        "200":
+          description: Revenue report
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RevenueDataPoint"
+
+  /reports/vehicles:
+    get:
+      operationId: getVehicleUtilizationReport
+      tags: [reports]
+      summary: Vehicle utilization report
+      parameters:
+        - name: startDate
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: endDate
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Vehicle utilization
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/VehicleUtilizationReport"
+
+  /reports/partners:
+    get:
+      operationId: getPartnerReport
+      tags: [reports]
+      summary: Partner (mitra) profit sharing report
+      parameters:
+        - name: startDate
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: endDate
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Partner report
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PartnerReport"
+
+  /reports/recent-activity:
+    get:
+      operationId: getRecentActivity
+      tags: [reports]
+      summary: Recent booking and transaction activity feed
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: ["integer", "null"]
+      responses:
+        "200":
+          description: Recent activity
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityItem"
+
+  # ─── USERS ────────────────────────────────────────────────────────────────────
+
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List system users
+      responses:
+        "200":
+          description: Users list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+    post:
+      operationId: createUser
+      tags: [users]
+      summary: Create a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserBody"
+      responses:
+        "201":
+          description: Created user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /users/login:
+    post:
+      operationId: loginUser
+      tags: [users]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginBody"
+      responses:
+        "200":
+          description: Login success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: Invalid credentials
+
+  /users/me:
+    get:
+      operationId: getCurrentUser
+      tags: [users]
+      summary: Get current logged-in user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Unauthenticated
+
+  /users/logout:
+    post:
+      operationId: logoutUser
+      tags: [users]
+      summary: Logout
+      responses:
+        "204":
+          description: Logged out
+
+# ─── SCHEMAS ──────────────────────────────────────────────────────────────────
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    Vehicle:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        plateNumber:
+          type: string
+        year:
+          type: integer
+        color:
+          type: string
+        status:
+          type: string
+          enum: [available, rented, maintenance]
+        ownership:
+          type: string
+          enum: [internal, external]
+        partnerName:
+          type: ["string", "null"]
+        dailyRate:
+          type: number
+        profitSharePercent:
+          type: ["number", "null"]
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required:
+        - id
+        - name
+        - plateNumber
+        - year
+        - color
+        - status
+        - ownership
+        - partnerName
+        - dailyRate
+        - profitSharePercent
+        - notes
+        - createdAt
+
+    CreateVehicleBody:
+      type: object
+      properties:
+        name:
+          type: string
+        plateNumber:
+          type: string
+        year:
+          type: integer
+        color:
+          type: string
+        status:
+          type: string
+          enum: [available, rented, maintenance]
+        ownership:
+          type: string
+          enum: [internal, external]
+        partnerName:
+          type: ["string", "null"]
+        dailyRate:
+          type: number
+        profitSharePercent:
+          type: ["number", "null"]
+        notes:
+          type: ["string", "null"]
+      required:
+        - name
+        - plateNumber
+        - year
+        - color
+        - ownership
+        - dailyRate
+
+    UpdateVehicleBody:
+      type: object
+      properties:
+        name:
+          type: string
+        plateNumber:
+          type: string
+        year:
+          type: integer
+        color:
+          type: string
+        status:
+          type: string
+          enum: [available, rented, maintenance]
+        ownership:
+          type: string
+          enum: [internal, external]
+        partnerName:
+          type: ["string", "null"]
+        dailyRate:
+          type: number
+        profitSharePercent:
+          type: ["number", "null"]
+        notes:
+          type: ["string", "null"]
+
+    MaintenanceLog:
+      type: object
+      properties:
+        id:
+          type: integer
+        vehicleId:
+          type: integer
+        type:
+          type: string
+          enum: [oil_change, tax_renewal, periodic_service, repair, other]
+        description:
+          type: string
+        cost:
+          type: ["number", "null"]
+        dueDate:
+          type: ["string", "null"]
+        completedAt:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required:
+        - id
+        - vehicleId
+        - type
+        - description
+        - cost
+        - dueDate
+        - completedAt
+        - createdAt
+
+    CreateMaintenanceLogBody:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [oil_change, tax_renewal, periodic_service, repair, other]
+        description:
+          type: string
+        cost:
+          type: ["number", "null"]
+        dueDate:
+          type: ["string", "null"]
+        completedAt:
+          type: ["string", "null"]
+      required:
+        - type
+        - description
+
+    Customer:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        phone:
+          type: string
+        email:
+          type: ["string", "null"]
+        idNumber:
+          type: string
+        idType:
+          type: string
+          enum: [ktp, sim, passport]
+        address:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        totalBookings:
+          type: integer
+        createdAt:
+          type: string
+      required:
+        - id
+        - name
+        - phone
+        - email
+        - idNumber
+        - idType
+        - address
+        - notes
+        - totalBookings
+        - createdAt
+
+    CreateCustomerBody:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+        email:
+          type: ["string", "null"]
+        idNumber:
+          type: string
+        idType:
+          type: string
+          enum: [ktp, sim, passport]
+        address:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+      required:
+        - name
+        - phone
+        - idNumber
+        - idType
+
+    UpdateCustomerBody:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+        email:
+          type: ["string", "null"]
+        idNumber:
+          type: string
+        idType:
+          type: string
+          enum: [ktp, sim, passport]
+        address:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+
+    Booking:
+      type: object
+      properties:
+        id:
+          type: integer
+        customerId:
+          type: integer
+        vehicleId:
+          type: integer
+        customerName:
+          type: string
+        vehicleName:
+          type: string
+        vehiclePlate:
+          type: string
+        rentalType:
+          type: string
+          enum: [self_drive, with_driver]
+        status:
+          type: string
+          enum: [pending, active, completed, cancelled]
+        startDate:
+          type: string
+        endDate:
+          type: string
+        startKm:
+          type: ["integer", "null"]
+        endKm:
+          type: ["integer", "null"]
+        baseAmount:
+          type: number
+        lateFee:
+          type: ["number", "null"]
+        washFee:
+          type: ["number", "null"]
+        damageFee:
+          type: ["number", "null"]
+        otherFee:
+          type: ["number", "null"]
+        pickupDropoffFee:
+          type: ["number", "null"]
+        totalAmount:
+          type: number
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required:
+        - id
+        - customerId
+        - vehicleId
+        - customerName
+        - vehicleName
+        - vehiclePlate
+        - rentalType
+        - status
+        - startDate
+        - endDate
+        - startKm
+        - endKm
+        - baseAmount
+        - lateFee
+        - washFee
+        - damageFee
+        - otherFee
+        - pickupDropoffFee
+        - totalAmount
+        - notes
+        - createdAt
+
+    CreateBookingBody:
+      type: object
+      properties:
+        customerId:
+          type: integer
+        vehicleId:
+          type: integer
+        rentalType:
+          type: string
+          enum: [self_drive, with_driver]
+        startDate:
+          type: string
+        endDate:
+          type: string
+        notes:
+          type: ["string", "null"]
+        pickupDropoffFee:
+          type: ["number", "null"]
+      required:
+        - customerId
+        - vehicleId
+        - rentalType
+        - startDate
+        - endDate
+
+    UpdateBookingBody:
+      type: object
+      properties:
+        rentalType:
+          type: string
+          enum: [self_drive, with_driver]
+        startDate:
+          type: string
+        endDate:
+          type: string
+        status:
+          type: string
+          enum: [pending, active, completed, cancelled]
+        pickupDropoffFee:
+          type: ["number", "null"]
+        notes:
+          type: ["string", "null"]
+
+    CheckinBody:
+      type: object
+      properties:
+        startKm:
+          type: integer
+      required:
+        - startKm
+
+    CheckoutBody:
+      type: object
+      properties:
+        endKm:
+          type: integer
+        lateFee:
+          type: ["number", "null"]
+        washFee:
+          type: ["number", "null"]
+        damageFee:
+          type: ["number", "null"]
+        otherFee:
+          type: ["number", "null"]
+        notes:
+          type: ["string", "null"]
+      required:
+        - endKm
+
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: integer
+        bookingId:
+          type: integer
+        invoiceNumber:
+          type: string
+        customerName:
+          type: string
+        vehicleName:
+          type: string
+        amount:
+          type: number
+        paidAmount:
+          type: number
+        status:
+          type: string
+          enum: [unpaid, paid, partial]
+        paymentMethod:
+          type: ["string", "null"]
+          enum: [cash, transfer, qris, null]
+        paidAt:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required:
+        - id
+        - bookingId
+        - invoiceNumber
+        - customerName
+        - vehicleName
+        - amount
+        - paidAmount
+        - status
+        - paymentMethod
+        - paidAt
+        - notes
+        - createdAt
+
+    CreateTransactionBody:
+      type: object
+      properties:
+        bookingId:
+          type: integer
+        amount:
+          type: number
+        notes:
+          type: ["string", "null"]
+      required:
+        - bookingId
+        - amount
+
+    UpdateTransactionBody:
+      type: object
+      properties:
+        paidAmount:
+          type: number
+        status:
+          type: string
+          enum: [unpaid, paid, partial]
+        paymentMethod:
+          type: ["string", "null"]
+          enum: [cash, transfer, qris, null]
+        notes:
+          type: ["string", "null"]
+
+    DashboardSummary:
+      type: object
+      properties:
+        totalVehicles:
+          type: integer
+        availableVehicles:
+          type: integer
+        rentedVehicles:
+          type: integer
+        maintenanceVehicles:
+          type: integer
+        activeBookings:
+          type: integer
+        pendingBookings:
+          type: integer
+        totalRevenueThisMonth:
+          type: number
+        totalRevenueToday:
+          type: number
+        unpaidInvoices:
+          type: integer
+        totalCustomers:
+          type: integer
+      required:
+        - totalVehicles
+        - availableVehicles
+        - rentedVehicles
+        - maintenanceVehicles
+        - activeBookings
+        - pendingBookings
+        - totalRevenueThisMonth
+        - totalRevenueToday
+        - unpaidInvoices
+        - totalCustomers
+
+    RevenueDataPoint:
+      type: object
+      properties:
+        period:
+          type: string
+        revenue:
+          type: number
+        bookingCount:
+          type: integer
+      required:
+        - period
+        - revenue
+        - bookingCount
+
+    VehicleUtilizationReport:
+      type: object
+      properties:
+        vehicleId:
+          type: integer
+        vehicleName:
+          type: string
+        plateNumber:
+          type: string
+        ownership:
+          type: string
+        totalBookings:
+          type: integer
+        totalRevenue:
+          type: number
+        utilizationDays:
+          type: integer
+        utilizationPercent:
+          type: number
+      required:
+        - vehicleId
+        - vehicleName
+        - plateNumber
+        - ownership
+        - totalBookings
+        - totalRevenue
+        - utilizationDays
+        - utilizationPercent
+
+    PartnerReport:
+      type: object
+      properties:
+        vehicleId:
+          type: integer
+        vehicleName:
+          type: string
+        plateNumber:
+          type: string
+        partnerName:
+          type: string
+        totalRevenue:
+          type: number
+        operationalCost:
+          type: number
+        netRevenue:
+          type: number
+        partnerShare:
+          type: number
+        companyShare:
+          type: number
+        profitSharePercent:
+          type: number
+      required:
+        - vehicleId
+        - vehicleName
+        - plateNumber
+        - partnerName
+        - totalRevenue
+        - operationalCost
+        - netRevenue
+        - partnerShare
+        - companyShare
+        - profitSharePercent
+
+    ActivityItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+          enum: [booking_created, checkin, checkout, payment, maintenance]
+        description:
+          type: string
+        relatedId:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+      required:
+        - id
+        - type
+        - description
+        - relatedId
+        - createdAt
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+          enum: [admin, staff, owner]
+        createdAt:
+          type: string
+      required:
+        - id
+        - username
+        - name
+        - role
+        - createdAt
+
+    CreateUserBody:
+      type: object
+      properties:
+        username:
+          type: string
+        name:
+          type: string
+        password:
+          type: string
+        role:
+          type: string
+          enum: [admin, staff, owner]
+      required:
+        - username
+        - name
+        - password
+        - role
+
+    LoginBody:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+      required:
+        - username
+        - password
+
+    LoginResponse:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+      required:
+        - user
