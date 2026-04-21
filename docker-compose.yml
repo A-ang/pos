@@ -2,32 +2,49 @@ services:
   web-frontend:
     build:
       context: .
-      dockerfile: ./artifacts/pos-rental/Dockerfile
+      dockerfile: ./apps/web/Dockerfile
       args:
         PORT: 3000
         BASE_PATH: /
     container_name: web-frontend
+    restart: unless-stopped
     ports:
       - "3000:80"
     depends_on:
-      - api-backend
+      api-backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
 
   api-backend:
     build:
-      context: ./artifacts/api-backend-go
+      context: ./apps/api-go
       dockerfile: Dockerfile
     container_name: api-backend
+    restart: unless-stopped
     environment:
       PORT: 8080
       DATABASE_URL: postgres://postgres:postgres@db-postgres:5432/pos_rental?sslmode=disable
     ports:
       - "8080:8080"
     depends_on:
-      - db-postgres
+      db-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/api/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
 
   db-postgres:
     image: postgres:16-alpine
     container_name: db-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_DB: pos_rental
       POSTGRES_USER: postgres
@@ -36,6 +53,14 @@ services:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./lib/db:/workspace/lib/db
+      - ./db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d pos_rental"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
 volumes:
   postgres-data:

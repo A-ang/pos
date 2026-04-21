@@ -2,7 +2,7 @@
 
 ## Overview
 
-Web POS & Manajemen Rental Mobil — a full-stack car rental management system. Built with React + Vite frontend and Express 5 backend.
+Web POS & Manajemen Rental Mobil — a full-stack car rental management system. Built with React + Vite frontend, Go backend, and PostgreSQL.
 
 ## Stack
 
@@ -10,12 +10,11 @@ Web POS & Manajemen Rental Mobil — a full-stack car rental management system. 
 - **Node.js version**: 24
 - **Package manager**: pnpm
 - **TypeScript version**: 5.9
-- **API framework**: Express 5
+- **API framework**: Go net/http
 - **Database**: PostgreSQL + Drizzle ORM
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
-- **Auth**: Session-based (express-session + connect-pg-simple)
+- **Auth**: Session-based / cookie-based scaffold on Go backend
 - **Frontend**: React + Vite + TanStack Query + wouter + shadcn/ui + Recharts
 
 ## Key Commands
@@ -24,12 +23,14 @@ Web POS & Manajemen Rental Mobil — a full-stack car rental management system. 
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- `pnpm --filter @workspace/api-server run dev` — run API server locally
+- `go run ./apps/api-go/cmd/server` — run Go API server locally
 
 ## Project Structure
 
-- `artifacts/pos-rental/` — React + Vite frontend (served at `/`)
-- `artifacts/api-server/` — Express API server (served at `/api`)
+- `apps/web/` — React + Vite frontend (served at `/`)
+- `apps/api-go/` — Go API backend (served at `/api`)
+- `apps/api-node/` — legacy Node backend snapshot, for reference/migration only
+- `apps/mockup/` — UI sandbox/mockup area
 - `lib/api-spec/openapi.yaml` — OpenAPI spec (source of truth)
 - `lib/api-client-react/` — Generated React Query hooks
 - `lib/api-zod/` — Generated Zod validation schemas
@@ -53,5 +54,5 @@ Web POS & Manajemen Rental Mobil — a full-stack car rental management system. 
 
 ## API Notes
 
-- Session stored in PostgreSQL `session` table
-- `SESSION_SECRET` env var used for session signing
+- PostgreSQL is the primary database service for local development
+- Go backend is now the main backend target for frontend integration

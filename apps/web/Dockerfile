@@ -12,17 +12,18 @@ ENV CI=true
 RUN corepack enable
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc tsconfig.json tsconfig.base.json ./
-COPY artifacts/pos-rental ./artifacts/pos-rental
+COPY apps/web ./apps/web
 COPY lib/api-client-react ./lib/api-client-react
+COPY lib/api-zod ./lib/api-zod
 COPY attached_assets ./attached_assets
 
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --no-frozen-lockfile
 
 RUN pnpm --filter @workspace/pos-rental exec vite build --config vite.config.ts
 
 FROM nginx:1.27-alpine
 
-COPY --from=builder /app/artifacts/pos-rental/dist/public /usr/share/nginx/html
-COPY artifacts/pos-rental/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder /app/apps/web/dist/public /usr/share/nginx/html
+COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80

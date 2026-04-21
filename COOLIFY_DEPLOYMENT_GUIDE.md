@@ -1,3 +1,33 @@
+## Local Docker Deployment
+
+Project ini sekarang bisa dijalankan dengan 3 service utama:
+
+- `db-postgres` — PostgreSQL database
+- `api-backend` — backend Go
+- `web-frontend` — frontend React/Vite via Nginx
+
+### Jalankan semua service
+
+```bash
+docker compose up -d --build
+```
+
+### Endpoint default
+
+- Frontend: `http://localhost:3000`
+- Backend API: `http://localhost:8080/api/healthz`
+- PostgreSQL: `localhost:5432`
+
+### Catatan database
+
+- Schema database otomatis dibuat dari `db/init/001_schema.sql`
+- Inisialisasi ini berjalan saat volume Postgres masih baru / pertama kali dibuat
+- Jika ingin ulang dari nol, hapus volume terlebih dulu:
+
+```bash
+docker compose down -v
+docker compose up -d --build
+```
 ## Tutorial Deploy POS Rental ke VPS Self-Hosted Coolify
 
 ### 1. Persiapan VPS
