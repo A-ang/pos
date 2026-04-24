@@ -8,6 +8,18 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS partners (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  contact TEXT NOT NULL,
+  address TEXT NOT NULL,
+  bank_account TEXT NOT NULL,
+  notes TEXT,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS customers (
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
@@ -47,12 +59,15 @@ CREATE TABLE IF NOT EXISTS bookings (
   start_date TIMESTAMPTZ NOT NULL,
   end_date TIMESTAMPTZ NOT NULL,
   start_km INTEGER,
+  start_fuel_bar INTEGER,
+  estimated_km INTEGER,
   end_km INTEGER,
   base_amount NUMERIC(15,2) NOT NULL DEFAULT 0,
   late_fee NUMERIC(15,2) DEFAULT 0,
   wash_fee NUMERIC(15,2) DEFAULT 0,
   damage_fee NUMERIC(15,2) DEFAULT 0,
   other_fee NUMERIC(15,2) DEFAULT 0,
+  pickup_dropoff_fee NUMERIC(15,2) DEFAULT 0,
   total_amount NUMERIC(15,2) NOT NULL DEFAULT 0,
   notes TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

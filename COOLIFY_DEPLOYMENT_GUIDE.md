@@ -416,6 +416,57 @@ VITE_TURNSTILE_SITE_KEY=isi_dengan_site_key_cloudflare
 - Session frontend dipaksa per-tab, sehingga saat tab ditutup user akan diminta login kembali.
 - Tombol logout dibuat lebih jelas di desktop dan mobile.
 
+## 11. Kenapa data hilang saat redeploy dan apa yang sudah diperbaiki
+
+Sebelumnya backend Go memakai data **in-memory**, sehingga setiap restart container data kembali ke seed awal.
+
+Sekarang sudah mulai dimigrasikan agar backend Go bisa:
+
+- membaca data dari PostgreSQL saat startup,
+- menyimpan perubahan utama ke PostgreSQL untuk data inti seperti:
+  - users,
+  - partners,
+  - vehicles,
+  - customers,
+  - bookings,
+  - transactions,
+  - maintenance logs,
+  - activity logs.
+
+Artinya setelah update ini, data tidak lagi hanya bergantung pada memory proses.
+
+### Penting
+
+- PostgreSQL harus aktif dan sehat.
+- `DATABASE_URL` harus benar.
+- Volume `postgres-data` **jangan dihapus** kalau tidak ingin data hilang.
+
+Jangan jalankan ini di production jika ingin data tetap ada:
+
+```bash
+docker compose down -v
+```
+
+Karena flag `-v` akan menghapus volume database.
+
+### Cara update aman di VPS tanpa menghapus data
+
+```bash
+cd /opt/pos
+git pull origin main
+docker compose up -d --build
+```
+
+Kalau mau restart service, gunakan:
+
+```bash
+cd /opt/pos
+docker compose down
+docker compose up -d --build
+```
+
+**Jangan** pakai `down -v` kecuali Anda memang ingin reset database.
+
 ## 6. Jalankan aplikasi
 
 Di root project VPS:

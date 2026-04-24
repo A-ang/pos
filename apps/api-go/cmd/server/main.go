@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"io"
@@ -128,6 +129,7 @@ type Activity struct {
 
 type Store struct {
 	mu              sync.Mutex
+	db              *sql.DB
 	users           []User
 	partners        []Partner
 	vehicles        []Vehicle
@@ -193,6 +195,16 @@ func newStore() *Store {
 
 func main() {
 	store := newStore()
+	if db, err := openDatabase(); err != nil {
+		log.Printf("postgres disabled, fallback to in-memory store: %v", err)
+	} else if db != nil {
+		store.db = db
+		if err := store.loadFromDatabase(); err != nil {
+			log.Printf("failed loading postgres data, fallback to in-memory seed: %v", err)
+		} else {
+			log.Printf("postgres data loaded successfully")
+		}
+	}
 	port := getenv("PORT", "8080")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -360,6 +372,10 @@ func (s *Store) handleUsers(w http.ResponseWriter, r *http.Request) {
 		}
 		user := User{ID: s.nextUserID, Username: body.Username, Name: body.Name, Password: body.Password, Role: body.Role, Active: true, CreatedAt: time.Now()}
 		s.nextUserID++
+		if err := s.saveUser(user); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
+		}
 		s.users = append(s.users, user)
 		writeJSON(w, http.StatusCreated, sanitizeUser(user))
 	default:
@@ -408,6 +424,10 @@ func (s *Store) handleUserRoutes(w http.ResponseWriter, r *http.Request) {
 		if body.Active != nil {
 			s.users[idx].Active = *body.Active
 		}
+		if err := s.saveUser(s.users[idx]); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
+		}
 		writeJSON(w, http.StatusOK, sanitizeUser(s.users[idx]))
 	default:
 		methodNotAllowed(w)
@@ -438,6 +458,10 @@ func (s *Store) handlePartners(w http.ResponseWriter, r *http.Request) {
 		}
 		partner := Partner{ID: s.nextPartnerID, Name: body.Name, Contact: body.Contact, Address: body.Address, BankAccount: body.BankAccount, Notes: body.Notes, Active: active, CreatedAt: time.Now()}
 		s.nextPartnerID++
+		if err := s.savePartner(partner); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
+		}
 		s.partners = append(s.partners, partner)
 		writeJSON(w, http.StatusCreated, partner)
 	default:
@@ -491,8 +515,16 @@ func (s *Store) handlePartnerRoutes(w http.ResponseWriter, r *http.Request) {
 		if body.Active != nil {
 			s.partners[idx].Active = *body.Active
 		}
+		if err := s.savePartner(s.partners[idx]); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
+		}
 		writeJSON(w, http.StatusOK, s.partners[idx])
 	case http.MethodDelete:
+		if err := s.deletePartner(s.partners[idx].ID); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
+		}
 		s.partners = append(s.partners[:idx], s.partners[idx+1:]...)
 		w.WriteHeader(http.StatusNoContent)
 	default:
@@ -527,6 +559,10 @@ func (s *Store) handleVehicles(w http.ResponseWriter, r *http.Request) {
 			body.Status = "available"
 		}
 		s.nextVehicleID++
+		if err := s.saveVehicle(body); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
+		}
 		s.vehicles = append(s.vehicles, body)
 		writeJSON(w, http.StatusCreated, body)
 	default:
@@ -568,8 +604,16 @@ func (s *Store) handleVehicleRoutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		applyVehiclePatch(&s.vehicles[idx], body)
+		if err := s.saveVehicle(s.vehicles[idx]); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
+		}
 		writeJSON(w, http.StatusOK, s.vehicles[idx])
 	case http.MethodDelete:
+		if err := s.deleteVehicle(s.vehicles[idx].ID); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
+		}
 		s.vehicles = append(s.vehicles[:idx], s.vehicles[idx+1:]...)
 		w.WriteHeader(http.StatusNoContent)
 	default:
@@ -598,6 +642,10 @@ func (s *Store) handleMaintenanceLogs(w http.ResponseWriter, r *http.Request, ve
 		body.VehicleID = vehicleID
 		body.CreatedAt = time.Now()
 		s.nextLogID++
+		if err := s.saveMaintenanceLog(body); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
+		}
 		s.maintenanceLogs = append(s.maintenanceLogs, body)
 		writeJSON(w, http.StatusCreated, body)
 	default:
@@ -626,6 +674,10 @@ func (s *Store) handleCustomers(w http.ResponseWriter, r *http.Request) {
 		body.ID = s.nextCustomerID
 		body.CreatedAt = time.Now()
 		s.nextCustomerID++
+		if err := s.saveCustomer(body); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
+		}
 		s.customers = append(s.customers, body)
 		writeJSON(w, http.StatusCreated, body)
 	default:
@@ -655,6 +707,10 @@ func (s *Store) handleCustomerRoutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		applyCustomerPatch(&s.customers[idx], body)
+		if err := s.saveCustomer(s.customers[idx]); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
+		}
 		writeJSON(w, http.StatusOK, s.customers[idx])
 	default:
 		methodNotAllowed(w)
@@ -704,8 +760,16 @@ func (s *Store) handleBookings(w http.ResponseWriter, r *http.Request) {
 		}
 		booking := Booking{ID: s.nextBookingID, CustomerID: body.CustomerID, VehicleID: body.VehicleID, Customer: customer.Name, Vehicle: vehicle.Name, Plate: vehicle.PlateNumber, RentalType: body.RentalType, Status: "pending", StartDate: start, EndDate: end, BaseAmount: base, PickupDropoffFee: pickupDropoffFee, TotalAmount: base + pickupDropoffFee, Notes: body.Notes, CreatedAt: time.Now()}
 		s.nextBookingID++
-		s.bookings = append(s.bookings, booking)
+		if err := s.saveBooking(booking); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
+		}
 		customer.TotalBookings++
+		if err := s.saveCustomer(*customer); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
+		}
+		s.bookings = append(s.bookings, booking)
 		s.addActivity("booking_created", "Reservasi baru: "+customer.Name+" - "+vehicle.Name, booking.ID)
 		writeJSON(w, http.StatusCreated, booking)
 	default:
@@ -746,6 +810,10 @@ func (s *Store) handleBookingRoutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		applyBookingPatch(&s.bookings[idx], body)
+		if err := s.saveBooking(s.bookings[idx]); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
+		}
 		writeJSON(w, http.StatusOK, s.bookings[idx])
 	default:
 		methodNotAllowed(w)
@@ -779,6 +847,14 @@ func (s *Store) handleCheckin(w http.ResponseWriter, r *http.Request, id int) {
 	booking.EstimatedKM = &body.EstimatedKM
 	if v := s.findVehicle(booking.VehicleID); v != nil {
 		v.Status = "rented"
+		if err := s.saveVehicle(*v); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
+		}
+	}
+	if err := s.saveBooking(*booking); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
 	}
 	s.addActivity("checkin", "Check-in: "+booking.Customer+" - "+booking.Vehicle, booking.ID)
 	writeJSON(w, http.StatusOK, booking)
@@ -818,9 +894,21 @@ func (s *Store) handleCheckout(w http.ResponseWriter, r *http.Request, id int) {
 	booking.Notes = body.Notes
 	if v := s.findVehicle(booking.VehicleID); v != nil {
 		v.Status = "available"
+		if err := s.saveVehicle(*v); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
+		}
+	}
+	if err := s.saveBooking(*booking); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
 	}
 	tx := Transaction{ID: s.nextTxnID, BookingID: booking.ID, InvoiceNumber: "INV-" + strconv.FormatInt(time.Now().Unix(), 10), CustomerName: booking.Customer, VehicleName: booking.Vehicle, Amount: booking.TotalAmount, PaidAmount: 0, Status: "unpaid", CreatedAt: time.Now()}
 	s.nextTxnID++
+	if err := s.saveTransaction(tx); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
 	s.transactions = append(s.transactions, tx)
 	s.addActivity("checkout", "Check-out: "+booking.Customer+" - "+booking.Vehicle, booking.ID)
 	writeJSON(w, http.StatusOK, booking)
@@ -855,6 +943,10 @@ func (s *Store) handleTransactions(w http.ResponseWriter, r *http.Request) {
 		}
 		tx := Transaction{ID: s.nextTxnID, BookingID: body.BookingID, InvoiceNumber: "INV-" + strconv.FormatInt(time.Now().Unix(), 10), CustomerName: booking.Customer, VehicleName: booking.Vehicle, Amount: body.Amount, PaidAmount: 0, Status: "unpaid", Notes: body.Notes, CreatedAt: time.Now()}
 		s.nextTxnID++
+		if err := s.saveTransaction(tx); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
+		}
 		s.transactions = append(s.transactions, tx)
 		writeJSON(w, http.StatusCreated, tx)
 	default:
@@ -918,6 +1010,10 @@ func (s *Store) handleTransactionRoutes(w http.ResponseWriter, r *http.Request) 
 		if tx.Status == "paid" {
 			now := time.Now()
 			tx.PaidAt = &now
+		}
+		if err := s.saveTransaction(*tx); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
 		}
 		s.addActivity("payment", "Pembayaran diterima: "+tx.InvoiceNumber, tx.ID)
 		writeJSON(w, http.StatusOK, tx)
@@ -1054,7 +1150,11 @@ func (s *Store) handleRecentActivity(w http.ResponseWriter, r *http.Request) {
 
 func (s *Store) addActivity(kind, desc string, relatedID int) {
 	related := relatedID
-	s.activities = append(s.activities, Activity{ID: s.nextActivityID, Type: kind, Description: desc, RelatedID: &related, CreatedAt: time.Now()})
+	activity := Activity{ID: s.nextActivityID, Type: kind, Description: desc, RelatedID: &related, CreatedAt: time.Now()}
+	if err := s.saveActivity(activity); err != nil {
+		log.Printf("failed saving activity: %v", err)
+	}
+	s.activities = append(s.activities, activity)
 	s.nextActivityID++
 }
 
