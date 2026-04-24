@@ -4,9 +4,11 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"log"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -135,6 +137,9 @@ type Store struct {
 	maintenanceLogs []MaintenanceLog
 	activities      []Activity
 	sessions        map[string]int
+	sessionExpiry   map[string]time.Time
+	loginAttempts   map[string]int
+	lockedUntil     map[string]time.Time
 	nextUserID      int
 	nextVehicleID   int
 	nextPartnerID   int
@@ -183,7 +188,7 @@ func newStore() *Store {
 	logs := []MaintenanceLog{{ID: 1, VehicleID: 2, Type: "periodic_service", Description: "Servis berkala 10.000 KM", Cost: floatPtr(450000), DueDate: timePtr(now.AddDate(0, 0, 2)), CreatedAt: now.AddDate(0, 0, -2)}}
 	activities := []Activity{{ID: 1, Type: "booking_created", Description: "Reservasi baru dibuat untuk Andi Saputra", RelatedID: &relatedBooking, CreatedAt: now.Add(-48 * time.Hour)}, {ID: 2, Type: "payment", Description: "Pembayaran invoice INV-202604001 diterima", RelatedID: &relatedTxn, CreatedAt: now.Add(-24 * time.Hour)}}
 	users := []User{{ID: 1, Username: "admin", Name: "Administrator", Password: "admin123", Role: "admin", Active: true, CreatedAt: now.AddDate(0, -3, 0)}, {ID: 2, Username: "budi", Name: "Budi Operasional", Password: "admin123", Role: "staff", Active: true, CreatedAt: now.AddDate(0, -2, 0)}, {ID: 3, Username: "mitra1", Name: "Pemilik Mitra", Password: "admin123", Role: "owner", Active: true, CreatedAt: now.AddDate(0, -1, 0)}}
-	return &Store{users: users, partners: partners, vehicles: vehicles, customers: customers, bookings: bookings, transactions: transactions, maintenanceLogs: logs, activities: activities, sessions: map[string]int{}, nextUserID: 4, nextPartnerID: 2, nextVehicleID: 3, nextCustomerID: 3, nextBookingID: 3, nextTxnID: 2, nextLogID: 2, nextActivityID: 3}
+	return &Store{users: users, partners: partners, vehicles: vehicles, customers: customers, bookings: bookings, transactions: transactions, maintenanceLogs: logs, activities: activities, sessions: map[string]int{}, sessionExpiry: map[string]time.Time{}, loginAttempts: map[string]int{}, lockedUntil: map[string]time.Time{}, nextUserID: 4, nextPartnerID: 2, nextVehicleID: 3, nextCustomerID: 3, nextBookingID: 3, nextTxnID: 2, nextLogID: 2, nextActivityID: 3}
 }
 
 func main() {
@@ -214,9 +219,31 @@ func main() {
 	mux.HandleFunc("/api/reports/partners", store.handlePartnerReport)
 	mux.HandleFunc("/api/reports/recent-activity", store.handleRecentActivity)
 	log.Printf("api-backend-golang listening on :%s", port)
-	if err := http.ListenAndServe(":"+port, withCORS(mux)); err != nil {
+	if err := http.ListenAndServe(":"+port, withCORS(store.withSecurity(mux))); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func (s *Store) withSecurity(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
+		if strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
+
+		if strings.HasPrefix(r.URL.Path, "/api") && r.URL.Path != "/api/healthz" && r.URL.Path != "/api/users/login" {
+			if _, ok := s.currentUser(r); !ok {
+				writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "Unauthenticated"})
+				return
+			}
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 func withCORS(next http.Handler) http.Handler {
@@ -242,8 +269,24 @@ func (s *Store) handleLogin(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w)
 		return
 	}
-	var body struct{ Username, Password string }
+	var body struct {
+		Username       string `json:"username"`
+		Password       string `json:"password"`
+		TurnstileToken string `json:"turnstileToken"`
+	}
+	clientIP := getClientIP(r)
+	s.mu.Lock()
+	if until, ok := s.lockedUntil[clientIP]; ok && until.After(time.Now()) {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "Terlalu banyak percobaan login. Coba lagi beberapa menit."})
+		return
+	}
+	s.mu.Unlock()
 	if !decodeJSON(w, r, &body) {
+		return
+	}
+	if err := verifyTurnstileToken(r, body.TurnstileToken); err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": err.Error()})
 		return
 	}
 	s.mu.Lock()
@@ -252,10 +295,18 @@ func (s *Store) handleLogin(w http.ResponseWriter, r *http.Request) {
 		if user.Username == body.Username && user.Password == body.Password && user.Active {
 			token := randomToken()
 			s.sessions[token] = user.ID
-			http.SetCookie(w, &http.Cookie{Name: "session_id", Value: token, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
+			s.sessionExpiry[token] = time.Now().Add(12 * time.Hour)
+			delete(s.loginAttempts, clientIP)
+			delete(s.lockedUntil, clientIP)
+			secureCookie := strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+			http.SetCookie(w, &http.Cookie{Name: "session_id", Value: token, Path: "/", HttpOnly: true, Secure: secureCookie, SameSite: http.SameSiteStrictMode})
 			writeJSON(w, http.StatusOK, map[string]any{"user": sanitizeUser(user)})
 			return
 		}
+	}
+	s.loginAttempts[clientIP]++
+	if s.loginAttempts[clientIP] >= 5 {
+		s.lockedUntil[clientIP] = time.Now().Add(5 * time.Minute)
 	}
 	writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "Invalid credentials"})
 }
@@ -268,9 +319,11 @@ func (s *Store) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie("session_id"); err == nil {
 		s.mu.Lock()
 		delete(s.sessions, cookie.Value)
+		delete(s.sessionExpiry, cookie.Value)
 		s.mu.Unlock()
 	}
-	http.SetCookie(w, &http.Cookie{Name: "session_id", Value: "", Path: "/", MaxAge: -1, HttpOnly: true})
+	secureCookie := strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+	http.SetCookie(w, &http.Cookie{Name: "session_id", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: secureCookie, SameSite: http.SameSiteStrictMode})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -288,6 +341,9 @@ func (s *Store) handleCurrentUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Store) handleUsers(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin") {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	switch r.Method {
@@ -312,6 +368,9 @@ func (s *Store) handleUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Store) handleUserRoutes(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRole(w, r, "admin") {
+		return
+	}
 	id, err := strconv.Atoi(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/users/"), "/"))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid id"})
@@ -1010,6 +1069,11 @@ func (s *Store) currentUser(r *http.Request) (User, bool) {
 	if !ok {
 		return User{}, false
 	}
+	if expiry, exists := s.sessionExpiry[cookie.Value]; exists && expiry.Before(time.Now()) {
+		delete(s.sessions, cookie.Value)
+		delete(s.sessionExpiry, cookie.Value)
+		return User{}, false
+	}
 	for _, user := range s.users {
 		if user.ID == uid {
 			return user, true
@@ -1207,3 +1271,70 @@ func getenv(key, fallback string) string {
 	}
 	return fallback
 }
+
+func (s *Store) requireRole(w http.ResponseWriter, r *http.Request, role string) bool {
+	user, ok := s.currentUser(r)
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "Unauthenticated"})
+		return false
+	}
+	if user.Role != role {
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": "Forbidden"})
+		return false
+	}
+	return true
+}
+
+func getClientIP(r *http.Request) string {
+	for _, header := range []string{"CF-Connecting-IP", "X-Forwarded-For", "X-Real-IP"} {
+		value := strings.TrimSpace(r.Header.Get(header))
+		if value == "" {
+			continue
+		}
+		if header == "X-Forwarded-For" {
+			parts := strings.Split(value, ",")
+			return strings.TrimSpace(parts[0])
+		}
+		return value
+	}
+	return r.RemoteAddr
+}
+
+func verifyTurnstileToken(r *http.Request, token string) error {
+	secret := strings.TrimSpace(os.Getenv("TURNSTILE_SECRET_KEY"))
+	if secret == "" {
+		return nil
+	}
+	if strings.TrimSpace(token) == "" {
+		return httpError("Verifikasi keamanan wajib diselesaikan")
+	}
+	form := url.Values{}
+	form.Set("secret", secret)
+	form.Set("response", token)
+	if remoteIP := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); remoteIP != "" {
+		form.Set("remoteip", remoteIP)
+	}
+	resp, err := http.PostForm("https://challenges.cloudflare.com/turnstile/v0/siteverify", form)
+	if err != nil {
+		return httpError("Gagal memverifikasi keamanan login")
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return httpError("Gagal memverifikasi keamanan login")
+	}
+	var payload struct {
+		Success bool `json:"success"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return httpError("Gagal memverifikasi keamanan login")
+	}
+	if !payload.Success {
+		return httpError("Verifikasi Cloudflare gagal")
+	}
+	return nil
+}
+
+type httpError string
+
+func (e httpError) Error() string { return string(e) }

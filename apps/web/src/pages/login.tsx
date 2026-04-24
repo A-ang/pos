@@ -14,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Redirect } from "wouter";
+import { useEffect, useRef, useState } from "react";
 
 const loginSchema = z.object({
   username: z.string().min(1, "Username wajib diisi"),
@@ -22,6 +23,9 @@ const loginSchema = z.object({
 
 export default function Login() {
   const { user, login, isLoggingIn } = useAuth();
+  const turnstileRef = useRef<HTMLDivElement | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined;
 
   const form = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),
@@ -31,12 +35,40 @@ export default function Login() {
     },
   });
 
+  useEffect(() => {
+    if (!siteKey || !turnstileRef.current) return;
+    const existingScript = document.querySelector('script[data-turnstile="true"]');
+    const renderWidget = () => {
+      const turnstile = (window as any).turnstile;
+      if (!turnstile || !turnstileRef.current || turnstileRef.current.dataset.rendered === "true") return;
+      turnstile.render(turnstileRef.current, {
+        sitekey: siteKey,
+        callback: (token: string) => setTurnstileToken(token),
+        "expired-callback": () => setTurnstileToken(""),
+        "error-callback": () => setTurnstileToken(""),
+      });
+      turnstileRef.current.dataset.rendered = "true";
+    };
+
+    if (!existingScript) {
+      const script = document.createElement("script");
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      script.async = true;
+      script.defer = true;
+      script.dataset.turnstile = "true";
+      script.onload = renderWidget;
+      document.body.appendChild(script);
+    } else {
+      renderWidget();
+    }
+  }, [siteKey]);
+
   if (user) {
     return <Redirect to="/dashboard" />;
   }
 
   function onSubmit(values: z.infer<typeof loginSchema>) {
-    login({ data: values });
+    login({ data: { ...values, turnstileToken } as any });
   }
 
   return (
@@ -80,6 +112,12 @@ export default function Login() {
               <Button type="submit" className="w-full h-12 text-lg font-medium" disabled={isLoggingIn}>
                 {isLoggingIn ? "Memproses..." : "Masuk"}
               </Button>
+              {siteKey && (
+                <div className="pt-2">
+                  <div ref={turnstileRef} />
+                  <p className="text-xs text-slate-500 mt-2">Login dilindungi verifikasi Cloudflare Turnstile.</p>
+                </div>
+              )}
             </form>
           </Form>
         </CardContent>

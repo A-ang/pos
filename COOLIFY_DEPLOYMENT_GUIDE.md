@@ -387,6 +387,35 @@ Urutan yang aman:
 6. `docker compose up -d --build`
 7. Verifikasi web, login, reservasi, transaksi, dan laporan
 
+## 10. Pengamanan login dan integrasi Cloudflare
+
+Untuk meningkatkan keamanan, sistem sekarang mendukung verifikasi **Cloudflare Turnstile** pada halaman login.
+
+Tambahkan environment berikut di VPS / Coolify:
+
+```env
+TURNSTILE_SECRET_KEY=isi_dengan_secret_key_cloudflare
+VITE_TURNSTILE_SITE_KEY=isi_dengan_site_key_cloudflare
+```
+
+### Langkah setup Cloudflare Turnstile
+
+1. Login ke dashboard Cloudflare.
+2. Buka menu **Turnstile**.
+3. Buat site baru.
+4. Tambahkan domain aplikasi Anda.
+5. Salin:
+   - **Site Key** → isi ke `VITE_TURNSTILE_SITE_KEY`
+   - **Secret Key** → isi ke `TURNSTILE_SECRET_KEY`
+6. Redeploy aplikasi.
+
+### Efek keamanan yang ditambahkan
+
+- Login dapat diproteksi verifikasi Cloudflare.
+- Cookie session backend dibuat lebih ketat (`HttpOnly`, `SameSite=Strict`, dan `Secure` saat HTTPS aktif).
+- Session frontend dipaksa per-tab, sehingga saat tab ditutup user akan diminta login kembali.
+- Tombol logout dibuat lebih jelas di desktop dan mobile.
+
 ## 6. Jalankan aplikasi
 
 Di root project VPS:

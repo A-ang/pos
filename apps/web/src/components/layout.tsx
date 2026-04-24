@@ -76,8 +76,9 @@ export function Layout({ children }: LayoutProps) {
           <p className="text-xs text-slate-500">{user?.name}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={() => logout()}>
-            <LogOut className="h-5 w-5" />
+          <Button variant="ghost" size="sm" onClick={() => logout()} className="gap-2">
+            <LogOut className="h-4 w-4" />
+            <span>Logout</span>
           </Button>
           <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
@@ -111,8 +112,9 @@ export function Layout({ children }: LayoutProps) {
               <p className="text-sm font-medium text-white truncate">{user?.name}</p>
               <p className="text-xs text-slate-400 truncate capitalize">{user?.role}</p>
             </div>
-            <Button variant="ghost" size="icon" onClick={() => logout()} className="text-slate-400 hover:text-white hover:bg-slate-800">
-              <LogOut className="h-5 w-5" />
+            <Button variant="ghost" size="sm" onClick={() => logout()} className="text-slate-400 hover:text-white hover:bg-slate-800 gap-2">
+              <LogOut className="h-4 w-4" />
+              <span className="hidden xl:inline">Logout</span>
             </Button>
           </div>
         </div>
