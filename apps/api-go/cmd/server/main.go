@@ -76,6 +76,8 @@ type Booking struct {
 	StartDate        time.Time `json:"startDate"`
 	EndDate          time.Time `json:"endDate"`
 	StartKM          *int      `json:"startKm"`
+	StartFuelBar     *int      `json:"startFuelBar"`
+	EstimatedKM      *int      `json:"estimatedKm"`
 	EndKM            *int      `json:"endKm"`
 	BaseAmount       float64   `json:"baseAmount"`
 	LateFee          float64   `json:"lateFee"`
@@ -155,6 +157,8 @@ func newStore() *Store {
 	addr2 := "Jl. Mawar No. 5, Bandung"
 	payMethod := "transfer"
 	startKM := 45210
+	startFuelBar := 6
+	estimatedKM := 250
 	endKM := 45555
 	relatedBooking := 1
 	relatedTxn := 1
@@ -172,7 +176,7 @@ func newStore() *Store {
 		{ID: 2, Name: "Sinta Lestari", Phone: "082233445566", Email: &email2, IDNumber: "3273010101010002", IDType: "sim", Address: &addr2, TotalBookings: 1, CreatedAt: now.AddDate(0, -1, -2)},
 	}
 	bookings := []Booking{
-		{ID: 1, CustomerID: 1, VehicleID: 1, Customer: customers[0].Name, Vehicle: vehicles[0].Name, Plate: vehicles[0].PlateNumber, RentalType: "self_drive", Status: "completed", StartDate: now.AddDate(0, 0, -7), EndDate: now.AddDate(0, 0, -5), StartKM: &startKM, EndKM: &endKM, BaseAmount: 700000, WashFee: 50000, PickupDropoffFee: 50000, TotalAmount: 800000, CreatedAt: now.AddDate(0, 0, -7)},
+		{ID: 1, CustomerID: 1, VehicleID: 1, Customer: customers[0].Name, Vehicle: vehicles[0].Name, Plate: vehicles[0].PlateNumber, RentalType: "self_drive", Status: "completed", StartDate: now.AddDate(0, 0, -7), EndDate: now.AddDate(0, 0, -5), StartKM: &startKM, StartFuelBar: &startFuelBar, EstimatedKM: &estimatedKM, EndKM: &endKM, BaseAmount: 700000, WashFee: 50000, PickupDropoffFee: 50000, TotalAmount: 800000, CreatedAt: now.AddDate(0, 0, -7)},
 		{ID: 2, CustomerID: 2, VehicleID: 2, Customer: customers[1].Name, Vehicle: vehicles[1].Name, Plate: vehicles[1].PlateNumber, RentalType: "with_driver", Status: "pending", StartDate: now.AddDate(0, 0, 1), EndDate: now.AddDate(0, 0, 3), BaseAmount: 600000, PickupDropoffFee: 0, TotalAmount: 600000, CreatedAt: now.AddDate(0, 0, -1)},
 	}
 	transactions := []Transaction{{ID: 1, BookingID: 1, InvoiceNumber: "INV-202604001", CustomerName: customers[0].Name, VehicleName: vehicles[0].Name, Amount: 800000, PaidAmount: 800000, Status: "paid", PaymentMethod: &payMethod, PaidAt: &now, CreatedAt: now.AddDate(0, 0, -5)}}
@@ -446,8 +450,10 @@ func (s *Store) handleVehicles(w http.ResponseWriter, r *http.Request) {
 		ownership := r.URL.Query().Get("ownership")
 		items := []Vehicle{}
 		for _, v := range s.vehicles {
-			if (status == "" || v.Status == status) && (ownership == "" || v.Ownership == ownership) {
-				items = append(items, v)
+			effective := v
+			effective.Status = s.computeVehicleStatus(v)
+			if (status == "" || effective.Status == status) && (ownership == "" || effective.Ownership == ownership) {
+				items = append(items, effective)
 			}
 		}
 		writeJSON(w, http.StatusOK, items)
@@ -494,7 +500,9 @@ func (s *Store) handleVehicleRoutes(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, s.vehicles[idx])
+		vehicle := s.vehicles[idx]
+		vehicle.Status = s.computeVehicleStatus(vehicle)
+		writeJSON(w, http.StatusOK, vehicle)
 	case http.MethodPatch:
 		var body map[string]any
 		if !decodeJSON(w, r, &body) {
@@ -691,7 +699,9 @@ func (s *Store) handleCheckin(w http.ResponseWriter, r *http.Request, id int) {
 		return
 	}
 	var body struct {
-		StartKM int `json:"startKm"`
+		StartKM      int `json:"startKm"`
+		StartFuelBar int `json:"startFuelBar"`
+		EstimatedKM  int `json:"estimatedKm"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -706,6 +716,8 @@ func (s *Store) handleCheckin(w http.ResponseWriter, r *http.Request, id int) {
 	booking := &s.bookings[idx]
 	booking.Status = "active"
 	booking.StartKM = &body.StartKM
+	booking.StartFuelBar = &body.StartFuelBar
+	booking.EstimatedKM = &body.EstimatedKM
 	if v := s.findVehicle(booking.VehicleID); v != nil {
 		v.Status = "rented"
 	}
@@ -809,6 +821,7 @@ func (s *Store) handleTransactionRoutes(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusOK, s.transactions[idx])
 	case http.MethodPatch:
 		var body struct {
+			Amount        *float64 `json:"amount"`
 			PaidAmount    *float64 `json:"paidAmount"`
 			Status        *string  `json:"status"`
 			PaymentMethod *string  `json:"paymentMethod"`
@@ -818,6 +831,19 @@ func (s *Store) handleTransactionRoutes(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		tx := &s.transactions[idx]
+		if body.Amount != nil {
+			tx.Amount = *body.Amount
+			if booking := s.findBooking(tx.BookingID); booking != nil {
+				booking.TotalAmount = *body.Amount
+			}
+			if tx.PaidAmount >= tx.Amount {
+				tx.Status = "paid"
+			} else if tx.PaidAmount > 0 {
+				tx.Status = "partial"
+			} else {
+				tx.Status = "unpaid"
+			}
+		}
 		if body.PaidAmount != nil {
 			tx.PaidAmount = *body.PaidAmount
 		}
@@ -1075,6 +1101,24 @@ func (s *Store) findPartnerIndex(id int) int {
 	}
 	return -1
 }
+func (s *Store) computeVehicleStatus(v Vehicle) string {
+	if v.Status == "maintenance" {
+		return "maintenance"
+	}
+	now := time.Now()
+	for _, booking := range s.bookings {
+		if booking.VehicleID != v.ID {
+			continue
+		}
+		if booking.Status == "active" && booking.EndDate.After(now) {
+			return "rented"
+		}
+		if booking.Status == "pending" && booking.EndDate.After(now) {
+			return "rented"
+		}
+	}
+	return "available"
+}
 func applyVehiclePatch(v *Vehicle, body map[string]any) {
 	if x, ok := body["name"].(string); ok {
 		v.Name = x
@@ -1099,8 +1143,29 @@ func applyCustomerPatch(c *Customer, body map[string]any) {
 	if x, ok := body["phone"].(string); ok {
 		c.Phone = x
 	}
+	if x, ok := body["email"].(string); ok {
+		c.Email = &x
+	}
+	if value, exists := body["email"]; exists && value == nil {
+		c.Email = nil
+	}
+	if x, ok := body["idNumber"].(string); ok {
+		c.IDNumber = x
+	}
+	if x, ok := body["idType"].(string); ok {
+		c.IDType = x
+	}
 	if x, ok := body["address"].(string); ok {
 		c.Address = &x
+	}
+	if value, exists := body["address"]; exists && value == nil {
+		c.Address = nil
+	}
+	if x, ok := body["notes"].(string); ok {
+		c.Notes = &x
+	}
+	if value, exists := body["notes"]; exists && value == nil {
+		c.Notes = nil
 	}
 }
 func applyBookingPatch(b *Booking, body map[string]any) {

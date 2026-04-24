@@ -1,5 +1,5 @@
 import { useParams, Link } from "wouter";
-import { useGetCustomer, useListBookings, getGetCustomerQueryKey, getListBookingsQueryKey } from "@workspace/api-client-react";
+import { useGetCustomer, useListBookings, getGetCustomerQueryKey, getListBookingsQueryKey, useUpdateCustomer, getListCustomersQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { StatusBadge } from "@/components/status-badge";
 import { formatRupiah, formatDate } from "@/lib/format";
@@ -7,10 +7,24 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, User, Calendar, MapPin, Phone, Mail, CreditCard } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useState, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
+
+type CustomerIdType = "ktp" | "sim" | "passport";
 
 export default function PelangganDetail() {
   const { id } = useParams();
   const customerId = parseInt(id || "0");
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState<{ name: string; phone: string; email: string; idType: CustomerIdType; idNumber: string; address: string; notes: string }>({ name: "", phone: "", email: "", idType: "ktp", idNumber: "", address: "", notes: "" });
 
   const { data: customer, isLoading: isLoadingCustomer } = useGetCustomer(customerId, {
     query: { enabled: !!customerId, queryKey: getGetCustomerQueryKey(customerId) }
@@ -24,6 +38,30 @@ export default function PelangganDetail() {
     : Array.isArray((bookings as any)?.items)
       ? (bookings as any).items
       : [];
+
+  useEffect(() => {
+    if (!customer) return;
+    setForm({
+      name: customer.name || "",
+      phone: customer.phone || "",
+      email: customer.email || "",
+      idType: customer.idType || "ktp",
+      idNumber: customer.idNumber || "",
+      address: customer.address || "",
+      notes: customer.notes || "",
+    });
+  }, [customer]);
+
+  const updateMutation = useUpdateCustomer({
+    mutation: {
+      onSuccess: (data) => {
+        queryClient.setQueryData(getGetCustomerQueryKey(customerId), data);
+        queryClient.invalidateQueries({ queryKey: getListCustomersQueryKey() });
+        toast({ title: "Pelanggan berhasil diperbarui" });
+        setOpen(false);
+      },
+    },
+  });
 
   if (isLoadingCustomer) {
     return <div className="p-8 text-slate-500">Memuat data pelanggan...</div>;
@@ -51,8 +89,63 @@ export default function PelangganDetail() {
             </p>
           </div>
         </div>
-        <Button>Edit Pelanggan</Button>
+        <Button onClick={() => setOpen(true)}>Edit Pelanggan</Button>
       </div>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit Pelanggan</DialogTitle>
+            <DialogDescription>Perbarui data profil pelanggan.</DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="md:col-span-2">
+              <Label>Nama Lengkap</Label>
+              <Input value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Nomor HP</Label>
+              <Input value={form.phone} onChange={(e) => setForm((prev) => ({ ...prev, phone: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Email</Label>
+              <Input value={form.email} onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Jenis Identitas</Label>
+              <Select value={form.idType} onValueChange={(value) => setForm((prev) => ({ ...prev, idType: value as CustomerIdType }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ktp">KTP</SelectItem>
+                  <SelectItem value="sim">SIM</SelectItem>
+                  <SelectItem value="passport">Passport</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Nomor Identitas</Label>
+              <Input value={form.idNumber} onChange={(e) => setForm((prev) => ({ ...prev, idNumber: e.target.value }))} />
+            </div>
+            <div className="md:col-span-2">
+              <Label>Alamat</Label>
+              <Textarea value={form.address} onChange={(e) => setForm((prev) => ({ ...prev, address: e.target.value }))} />
+            </div>
+            <div className="md:col-span-2">
+              <Label>Catatan</Label>
+              <Textarea value={form.notes} onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Batal</Button>
+            <Button
+              onClick={() => updateMutation.mutate({ id: customerId, data: { ...form, email: form.email || null, address: form.address || null, notes: form.notes || null } })}
+              disabled={updateMutation.isPending || !form.name || !form.phone || !form.idNumber}
+            >
+              {updateMutation.isPending ? "Menyimpan..." : "Simpan"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="shadow-sm md:col-span-1 border-t-4 border-t-blue-500">

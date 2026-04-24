@@ -62,6 +62,16 @@ export default function Mitra() {
     };
     const grouped = new Map<string, PartnerAggregate>();
 
+    (partners as any[]).forEach((partner) => {
+      grouped.set(partner.name, {
+        name: partner.name,
+        unitCount: 0,
+        avgShare: 0,
+        potentialRevenue: 0,
+        plates: [],
+      });
+    });
+
     vehicleItems.forEach((vehicle: any) => {
       const partnerName = vehicle.partnerName || "Mitra Belum Diisi";
       const current: PartnerAggregate = grouped.get(partnerName) || {
@@ -84,7 +94,7 @@ export default function Mitra() {
       ...item,
       avgShare: item.unitCount ? Math.round(item.avgShare / item.unitCount) : 0,
     }));
-  }, [vehicleItems]);
+  }, [vehicleItems, partners]);
 
   const partnerDirectory = useMemo(() => {
     return partnerSummary.map((partner) => {
@@ -243,7 +253,7 @@ export default function Mitra() {
                 </TableRow>
               ) : partnerDirectory.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="h-28 text-center text-slate-500">Belum ada unit eksternal yang terhubung ke mitra.</TableCell>
+                  <TableCell colSpan={9} className="h-28 text-center text-slate-500">Belum ada data mitra.</TableCell>
                 </TableRow>
               ) : (
                 partnerDirectory.map((partner) => (

@@ -1,48 +1,40 @@
 import { useState } from "react";
-import { useListUsers, useCreateUser, getListUsersQueryKey } from "@workspace/api-client-react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useCreateUser, useListUsers, getListUsersQueryKey } from "@workspace/api-client-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { formatDate } from "@/lib/format";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
-import { Users, UserPlus, ShieldAlert } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { formatDate } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { Switch } from "@/components/ui/switch";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { useQueryClient } from "@tanstack/react-query";
+import { ShieldAlert, UserPlus, Users } from "lucide-react";
 
-const userSchema = z.object({
-  username: z.string().min(3, "Username minimal 3 karakter"),
-  name: z.string().min(1, "Nama wajib diisi"),
-  password: z.string().min(6, "Password minimal 6 karakter"),
-  role: z.enum(["admin", "staff", "owner"]),
-});
+type UserRole = "admin" | "staff" | "owner";
 
 export default function Pengguna() {
   const { data: users, isLoading } = useListUsers();
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingUser, setEditingUser] = useState<any | null>(null);
-  const [editForm, setEditForm] = useState({ name: "", role: "staff", password: "", active: true });
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
   const { user: currentUser } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
-  const form = useForm<z.infer<typeof userSchema>>({
-    resolver: zodResolver(userSchema),
-    defaultValues: {
-      username: "",
-      name: "",
-      password: "",
-      role: "staff",
-    },
+  const [createForm, setCreateForm] = useState({
+    username: "",
+    name: "",
+    password: "",
+    role: "staff" as UserRole,
+  });
+
+  const [editingUserId, setEditingUserId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    role: "staff" as UserRole,
+    password: "",
+    active: true,
   });
 
   const createMutation = useCreateUser({
@@ -50,31 +42,49 @@ export default function Pengguna() {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListUsersQueryKey() });
         toast({ title: "Pengguna berhasil ditambahkan" });
-        setIsDialogOpen(false);
-        form.reset();
-      }
-    }
+        setCreateForm({ username: "", name: "", password: "", role: "staff" });
+      },
+    },
   });
 
-  const onSubmit = (values: z.infer<typeof userSchema>) => {
-    createMutation.mutate({ data: values });
+  const openEdit = (user: any) => {
+    setEditingUserId(user.id);
+    setEditForm({
+      name: user.name,
+      role: user.role,
+      password: "",
+      active: user.active !== false,
+    });
   };
 
-  const saveUserAccess = async () => {
-    if (!editingUser) return;
-    const response = await fetch(`/api/users/${editingUser.id}`, {
+  const handleCreateUser = () => {
+    if (!createForm.username || !createForm.name || !createForm.password) {
+      toast({ title: "Lengkapi data pengguna", variant: "destructive" });
+      return;
+    }
+
+    createMutation.mutate({ data: createForm });
+  };
+
+  const handleSaveAccess = async () => {
+    if (!editingUserId) return;
+
+    const response = await fetch(`/api/users/${editingUserId}`, {
       method: "PATCH",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(editForm),
     });
+
     if (!response.ok) {
       toast({ title: "Gagal memperbarui pengguna", variant: "destructive" });
       return;
     }
+
     queryClient.invalidateQueries({ queryKey: getListUsersQueryKey() });
     toast({ title: "Hak akses pengguna diperbarui" });
-    setEditingUser(null);
+    setEditingUserId(null);
+    setEditForm({ name: "", role: "staff", password: "", active: true });
   };
 
   if (currentUser?.role !== "admin") {
@@ -89,112 +99,65 @@ export default function Pengguna() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Pengguna Sistem</h1>
-          <p className="text-slate-500 mt-1">Kelola RBAC untuk admin, staff operasional, dan owner</p>
-        </div>
-        
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-2">
-              <UserPlus className="h-4 w-4" />
-              Tambah Pengguna
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>Tambah Pengguna Baru</DialogTitle>
-              <DialogDescription>
-                Buat akun baru untuk memberikan akses ke sistem POS Rental.
-              </DialogDescription>
-            </DialogHeader>
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 pt-4">
-                <FormField
-                  control={form.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Nama Lengkap</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Contoh: Budi Santoso" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="username"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Username</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Contoh: budi.s" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Password</FormLabel>
-                      <FormControl>
-                        <Input type="password" placeholder="Minimal 6 karakter" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="role"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Peran (Role)</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Pilih peran" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="staff">Staf (Kasir/Operasional)</SelectItem>
-                          <SelectItem value="admin">Administrator</SelectItem>
-                          <SelectItem value="owner">Pemilik (Laporan Saja)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <DialogFooter className="pt-4">
-                  <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>Batal</Button>
-                  <Button type="submit" disabled={createMutation.isPending}>
-                    {createMutation.isPending ? "Menyimpan..." : "Simpan"}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </Form>
-          </DialogContent>
-        </Dialog>
+      <div>
+        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Pengguna Sistem</h1>
+        <p className="text-slate-500 mt-1">Kelola RBAC untuk admin, staff operasional, dan owner</p>
       </div>
 
       <Card className="border-0 shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><UserPlus className="h-5 w-5" /> Tambah Pengguna</CardTitle>
+          <CardDescription>Buat akun baru untuk admin, staff, atau owner.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label>Nama Lengkap</Label>
+              <Input value={createForm.name} onChange={(e) => setCreateForm((prev) => ({ ...prev, name: e.target.value }))} placeholder="Contoh: Budi Santoso" />
+            </div>
+            <div>
+              <Label>Username</Label>
+              <Input value={createForm.username} onChange={(e) => setCreateForm((prev) => ({ ...prev, username: e.target.value }))} placeholder="Contoh: budi.s" />
+            </div>
+            <div>
+              <Label>Password</Label>
+              <Input type="password" value={createForm.password} onChange={(e) => setCreateForm((prev) => ({ ...prev, password: e.target.value }))} placeholder="Minimal 6 karakter" />
+            </div>
+            <div>
+              <Label>Role</Label>
+              <Select value={createForm.role} onValueChange={(value) => setCreateForm((prev) => ({ ...prev, role: value as UserRole }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">Administrator</SelectItem>
+                  <SelectItem value="staff">Staf Operasional</SelectItem>
+                  <SelectItem value="owner">Owner</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="flex justify-end mt-4">
+            <Button onClick={handleCreateUser} disabled={createMutation.isPending}>
+              {createMutation.isPending ? "Menyimpan..." : "Simpan Pengguna"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-0 shadow-sm">
+        <CardHeader>
+          <CardTitle>Daftar Pengguna & Hak Akses</CardTitle>
+          <CardDescription>Edit role dan status akun pengguna langsung dari tabel.</CardDescription>
+        </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader className="bg-slate-50">
               <TableRow>
                 <TableHead className="px-6 py-4 font-semibold text-slate-700">Nama Lengkap</TableHead>
-                <TableHead className="font-semibold text-slate-700">Username</TableHead>
-                <TableHead className="font-semibold text-slate-700">Peran (Role)</TableHead>
-                <TableHead className="font-semibold text-slate-700">Status</TableHead>
-                <TableHead className="font-semibold text-slate-700">Terdaftar Pada</TableHead>
-                <TableHead className="text-right font-semibold text-slate-700">Aksi</TableHead>
+                <TableHead>Username</TableHead>
+                <TableHead>Peran</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Terdaftar Pada</TableHead>
+                <TableHead className="text-right">Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -214,16 +177,15 @@ export default function Pengguna() {
               ) : (
                 users?.map((user) => {
                   const isActive = (user as any).active !== false;
-
                   return (
                     <TableRow key={user.id} className="hover:bg-slate-50">
                       <TableCell className="px-6 font-medium text-slate-900">{user.name}</TableCell>
                       <TableCell className="text-slate-600">{user.username}</TableCell>
                       <TableCell>
-                        {user.role === 'admin' ? (
+                        {user.role === "admin" ? (
                           <Badge variant="default" className="bg-purple-600 hover:bg-purple-700">Administrator</Badge>
-                        ) : user.role === 'owner' ? (
-                          <Badge variant="outline" className="text-slate-700 border-slate-300">Pemilik</Badge>
+                        ) : user.role === "owner" ? (
+                          <Badge variant="outline" className="text-slate-700 border-slate-300">Owner</Badge>
                         ) : (
                           <Badge variant="secondary" className="bg-blue-100 text-blue-800 hover:bg-blue-200">Staf</Badge>
                         )}
@@ -234,61 +196,8 @@ export default function Pengguna() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-slate-500 text-sm">{formatDate(user.createdAt)}</TableCell>
-                      <TableCell className="text-right">
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setEditingUser(user);
-                                setEditForm({ name: user.name, role: user.role, password: "", active: isActive });
-                              }}
-                            >
-                              Kelola Akses
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Kelola Hak Akses Pengguna</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Administrator dapat mengubah nama, role, status aktif, dan reset password pengguna.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <div className="space-y-4 py-2">
-                              <div>
-                                <FormLabel>Nama</FormLabel>
-                                <Input value={editForm.name} onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))} />
-                              </div>
-                              <div>
-                                <FormLabel>Role</FormLabel>
-                                <Select value={editForm.role} onValueChange={(value) => setEditForm((prev) => ({ ...prev, role: value }))}>
-                                  <SelectTrigger><SelectValue /></SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="admin">Administrator</SelectItem>
-                                    <SelectItem value="staff">Staf</SelectItem>
-                                    <SelectItem value="owner">Owner</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              <div>
-                                <FormLabel>Password Baru (opsional)</FormLabel>
-                                <Input type="password" value={editForm.password} onChange={(e) => setEditForm((prev) => ({ ...prev, password: e.target.value }))} />
-                              </div>
-                              <div className="flex items-center justify-between rounded-lg border p-3">
-                                <div>
-                                  <p className="font-medium text-slate-900">Status Akun</p>
-                                  <p className="text-xs text-slate-500">Matikan bila user tidak boleh login lagi</p>
-                                </div>
-                                <Switch checked={editForm.active} onCheckedChange={(checked) => setEditForm((prev) => ({ ...prev, active: checked }))} />
-                              </div>
-                            </div>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Batal</AlertDialogCancel>
-                              <AlertDialogAction onClick={saveUserAccess}>Simpan Perubahan</AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
+                      <TableCell className="text-right pr-6">
+                        <Button variant="outline" size="sm" onClick={() => openEdit(user)}>Kelola Akses</Button>
                       </TableCell>
                     </TableRow>
                   );
@@ -298,6 +207,49 @@ export default function Pengguna() {
           </Table>
         </CardContent>
       </Card>
+
+      {editingUserId && (
+        <Card className="border-0 shadow-sm border-l-4 border-l-blue-600">
+          <CardHeader>
+            <CardTitle>Kelola Hak Akses Pengguna</CardTitle>
+            <CardDescription>Ubah nama, role, status aktif, dan password pengguna.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label>Nama</Label>
+                <Input value={editForm.name} onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Role</Label>
+                <Select value={editForm.role} onValueChange={(value) => setEditForm((prev) => ({ ...prev, role: value as UserRole }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin">Administrator</SelectItem>
+                    <SelectItem value="staff">Staf</SelectItem>
+                    <SelectItem value="owner">Owner</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Password Baru (Opsional)</Label>
+                <Input type="password" value={editForm.password} onChange={(e) => setEditForm((prev) => ({ ...prev, password: e.target.value }))} />
+              </div>
+              <div className="flex items-center justify-between rounded-lg border p-3 mt-6 md:mt-0">
+                <div>
+                  <p className="font-medium text-slate-900">Status Akun</p>
+                  <p className="text-xs text-slate-500">Matikan bila user tidak boleh login lagi</p>
+                </div>
+                <Switch checked={editForm.active} onCheckedChange={(checked) => setEditForm((prev) => ({ ...prev, active: checked }))} />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <Button variant="outline" onClick={() => setEditingUserId(null)}>Batal</Button>
+              <Button onClick={handleSaveAccess}>Simpan Perubahan</Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

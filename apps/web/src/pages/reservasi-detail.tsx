@@ -1,5 +1,5 @@
 import { useParams, Link } from "wouter";
-import { useGetBooking, useCheckinBooking, useCheckoutBooking, useGetTransaction } from "@workspace/api-client-react";
+import { useGetBooking, useCheckinBooking, useCheckoutBooking, useGetTransaction, getListBookingsQueryKey, getListVehiclesQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { StatusBadge } from "@/components/status-badge";
 import { formatRupiah, formatDate, calculateRentalDays, formatDateTimeWIB } from "@/lib/format";
@@ -18,6 +18,8 @@ export default function ReservasiDetail() {
   const queryClient = useQueryClient();
 
   const [startKm, setStartKm] = useState("");
+  const [startFuelBar, setStartFuelBar] = useState("0");
+  const [estimatedKm, setEstimatedKm] = useState("0");
   const [endKm, setEndKm] = useState("");
   const [lateFee, setLateFee] = useState("0");
   const [damageFee, setDamageFee] = useState("0");
@@ -33,6 +35,8 @@ export default function ReservasiDetail() {
     mutation: {
       onSuccess: (data) => {
         queryClient.setQueryData(getGetBookingQueryKey(bookingId), data);
+        queryClient.invalidateQueries({ queryKey: getListBookingsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getListVehiclesQueryKey() });
       }
     }
   });
@@ -41,6 +45,8 @@ export default function ReservasiDetail() {
     mutation: {
       onSuccess: (data) => {
         queryClient.setQueryData(getGetBookingQueryKey(bookingId), data);
+        queryClient.invalidateQueries({ queryKey: getListBookingsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getListVehiclesQueryKey() });
       }
     }
   });
@@ -56,7 +62,7 @@ export default function ReservasiDetail() {
   const bookingWithPickup = booking as typeof booking & { pickupDropoffFee?: number | null };
 
   const handleCheckin = () => {
-    checkinMutation.mutate({ id: bookingId, data: { startKm: parseInt(startKm) || 0 } });
+    checkinMutation.mutate({ id: bookingId, data: { startKm: parseInt(startKm) || 0, startFuelBar: parseInt(startFuelBar) || 0, estimatedKm: parseInt(estimatedKm) || 0 } as any });
   };
 
   const handleCheckout = () => {
@@ -260,6 +266,16 @@ export default function ReservasiDetail() {
                       className="bg-slate-900 border-slate-700 text-white"
                     />
                   </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-slate-300">Bensin Saat Keluar (bar)</Label>
+                      <Input type="number" min="0" max="8" value={startFuelBar} onChange={(e) => setStartFuelBar(e.target.value)} className="bg-slate-900 border-slate-700 text-white" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-slate-300">Estimasi KM Pemakaian</Label>
+                      <Input type="number" min="0" value={estimatedKm} onChange={(e) => setEstimatedKm(e.target.value)} className="bg-slate-900 border-slate-700 text-white" />
+                    </div>
+                  </div>
                   <Button 
                     className="w-full bg-indigo-600 hover:bg-indigo-700" 
                     onClick={handleCheckin}
@@ -282,6 +298,14 @@ export default function ReservasiDetail() {
                     <div>
                       <p className="text-slate-400 text-xs">KM Keluar</p>
                       <p className="font-mono text-slate-200">{booking.startKm} km</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-400 text-xs">Bensin Keluar</p>
+                      <p className="font-mono text-slate-200">{(booking as any).startFuelBar ?? 0} bar</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-400 text-xs">Estimasi KM</p>
+                      <p className="font-mono text-slate-200">{(booking as any).estimatedKm ?? 0} km</p>
                     </div>
                   </div>
 

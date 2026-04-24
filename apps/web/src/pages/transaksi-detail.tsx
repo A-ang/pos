@@ -23,6 +23,7 @@ export default function TransaksiDetail() {
   const { toast } = useToast();
 
   const [paymentAmount, setPaymentAmount] = useState("");
+  const [editAmount, setEditAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "transfer" | "qris">("transfer");
   const [printConfigOpen, setPrintConfigOpen] = useState(false);
   const [printConfig, setPrintConfig] = useState({
@@ -68,6 +69,8 @@ Dokumen: E-Resi ini adalah bukti sah dan wajib ditunjukkan saat pengambilan unit
   if (!transaction) {
     return <div className="p-8 text-slate-500">Tagihan tidak ditemukan.</div>;
   }
+
+  const effectiveEditAmount = editAmount || String(transaction.amount ?? 0);
 
   const relatedBookingWithPickup = relatedBooking as (typeof relatedBooking & { pickupDropoffFee?: number | null }) | undefined;
 
@@ -189,6 +192,17 @@ Dokumen: E-Resi ini adalah bukti sah dan wajib ditunjukkan saat pengambilan unit
 
   const handlePayFull = () => {
     setPaymentAmount(remainingAmount.toString());
+  };
+
+  const handleUpdateAmount = () => {
+    const parsed = parseInt(effectiveEditAmount) || 0;
+    if (parsed <= 0) return;
+    updateMutation.mutate({
+      id: transactionId,
+      data: {
+        amount: parsed,
+      } as any,
+    });
   };
 
   return (
@@ -317,6 +331,17 @@ Dokumen: E-Resi ini adalah bukti sah dan wajib ditunjukkan saat pengambilan unit
             </div>
 
             <div className="space-y-4">
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-amber-900">Koreksi Harga Transaksi</span>
+                  <span className="text-xs text-amber-700">Jika salah input</span>
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-medium">Rp</span>
+                  <Input className="pl-10" type="number" value={effectiveEditAmount} onChange={(e) => setEditAmount(e.target.value)} />
+                </div>
+                <Button variant="outline" className="w-full" onClick={handleUpdateAmount} disabled={updateMutation.isPending}>Simpan Harga Baru</Button>
+              </div>
               {relatedBooking && (
                 <>
                   <div className="flex justify-between items-center text-sm">

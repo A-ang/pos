@@ -1,5 +1,6 @@
+import { useEffect, useState } from "react";
 import { useParams, Link } from "wouter";
-import { useGetVehicle, useListMaintenanceLogs, useListBookings, getGetVehicleQueryKey, getListMaintenanceLogsQueryKey, getListBookingsQueryKey } from "@workspace/api-client-react";
+import { useGetVehicle, useListMaintenanceLogs, useListBookings, getGetVehicleQueryKey, getListMaintenanceLogsQueryKey, getListBookingsQueryKey, useUpdateVehicle, getListVehiclesQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/status-badge";
@@ -7,10 +8,46 @@ import { formatRupiah, formatDate } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Car, Calendar, Settings, FileText, CheckCircle2, AlertCircle } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
+
+type Ownership = "internal" | "external";
+type VehicleStatus = "available" | "rented" | "maintenance";
 
 export default function ArmadaDetail() {
   const { id } = useParams();
   const vehicleId = parseInt(id || "0");
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState<{
+    name: string;
+    plateNumber: string;
+    year: number;
+    color: string;
+    dailyRate: number;
+    ownership: Ownership;
+    status: VehicleStatus;
+    partnerName: string;
+    profitSharePercent: number | "";
+    notes: string;
+  }>({
+    name: "",
+    plateNumber: "",
+    year: new Date().getFullYear(),
+    color: "",
+    dailyRate: 0,
+    ownership: "internal",
+    status: "available",
+    partnerName: "",
+    profitSharePercent: "",
+    notes: "",
+  });
 
   const { data: vehicle, isLoading: isLoadingVehicle } = useGetVehicle(vehicleId, {
     query: { enabled: !!vehicleId, queryKey: getGetVehicleQueryKey(vehicleId) }
@@ -24,6 +61,32 @@ export default function ArmadaDetail() {
     { vehicleId },
     { query: { enabled: !!vehicleId, queryKey: getListBookingsQueryKey({ vehicleId }) } }
   );
+  useEffect(() => {
+    if (!vehicle) return;
+    setForm({
+      name: vehicle.name,
+      plateNumber: vehicle.plateNumber,
+      year: vehicle.year,
+      color: vehicle.color,
+      dailyRate: vehicle.dailyRate,
+      ownership: vehicle.ownership as Ownership,
+      status: vehicle.status as VehicleStatus,
+      partnerName: vehicle.partnerName || "",
+      profitSharePercent: vehicle.profitSharePercent ?? "",
+      notes: vehicle.notes || "",
+    });
+  }, [vehicle]);
+
+  const updateMutation = useUpdateVehicle({
+    mutation: {
+      onSuccess: (data) => {
+        queryClient.setQueryData(getGetVehicleQueryKey(vehicleId), data);
+        queryClient.invalidateQueries({ queryKey: getListVehiclesQueryKey() });
+        toast({ title: "Armada berhasil diperbarui" });
+        setOpen(false);
+      },
+    },
+  });
 
   if (isLoadingVehicle) {
     return <div className="p-8 text-slate-500">Memuat data kendaraan...</div>;
@@ -51,8 +114,99 @@ export default function ArmadaDetail() {
             </p>
           </div>
         </div>
-        <Button>Edit Armada</Button>
+        <Button onClick={() => setOpen(true)}>Edit Armada</Button>
       </div>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Edit Armada</DialogTitle>
+            <DialogDescription>Perbarui informasi kendaraan, kepemilikan, dan tarif sewa.</DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label>Nama Kendaraan</Label>
+              <Input value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Plat Nomor</Label>
+              <Input value={form.plateNumber} onChange={(e) => setForm((prev) => ({ ...prev, plateNumber: e.target.value.toUpperCase() }))} />
+            </div>
+            <div>
+              <Label>Tahun</Label>
+              <Input type="number" value={form.year} onChange={(e) => setForm((prev) => ({ ...prev, year: Number(e.target.value) || new Date().getFullYear() }))} />
+            </div>
+            <div>
+              <Label>Warna</Label>
+              <Input value={form.color} onChange={(e) => setForm((prev) => ({ ...prev, color: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Tarif Harian</Label>
+              <Input type="number" value={form.dailyRate} onChange={(e) => setForm((prev) => ({ ...prev, dailyRate: Number(e.target.value) || 0 }))} />
+            </div>
+            <div>
+              <Label>Status</Label>
+              <Select value={form.status} onValueChange={(value) => setForm((prev) => ({ ...prev, status: value as VehicleStatus }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="available">Tersedia</SelectItem>
+                  <SelectItem value="rented">Disewa</SelectItem>
+                  <SelectItem value="maintenance">Maintenance</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Kepemilikan</Label>
+              <Select value={form.ownership} onValueChange={(value) => setForm((prev) => ({ ...prev, ownership: value as Ownership, partnerName: value === "external" ? prev.partnerName : "", profitSharePercent: value === "external" ? prev.profitSharePercent : "" }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="internal">Internal</SelectItem>
+                  <SelectItem value="external">Eksternal</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {form.ownership === "external" && (
+              <>
+                <div>
+                  <Label>Nama Mitra</Label>
+                  <Input value={form.partnerName} onChange={(e) => setForm((prev) => ({ ...prev, partnerName: e.target.value }))} placeholder="Masukkan nama mitra" />
+                </div>
+                <div>
+                  <Label>Bagi Hasil Mitra (%)</Label>
+                  <Input type="number" value={form.profitSharePercent} onChange={(e) => setForm((prev) => ({ ...prev, profitSharePercent: e.target.value === "" ? "" : Number(e.target.value) }))} />
+                </div>
+              </>
+            )}
+            <div className="md:col-span-2">
+              <Label>Catatan</Label>
+              <Textarea value={form.notes} onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Batal</Button>
+            <Button
+              onClick={() => updateMutation.mutate({
+                id: vehicleId,
+                data: {
+                  name: form.name,
+                  plateNumber: form.plateNumber,
+                  year: form.year,
+                  color: form.color,
+                  dailyRate: form.dailyRate,
+                  status: form.status,
+                  ownership: form.ownership,
+                  partnerName: form.ownership === "external" ? (form.partnerName || null) : null,
+                  profitSharePercent: form.ownership === "external" && form.profitSharePercent !== "" ? Number(form.profitSharePercent) : null,
+                  notes: form.notes || null,
+                },
+              })}
+              disabled={updateMutation.isPending || !form.name || !form.plateNumber || !form.color}
+            >
+              {updateMutation.isPending ? "Menyimpan..." : "Simpan Perubahan"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Tabs defaultValue="info" className="w-full">
         <TabsList className="bg-slate-100 p-1">

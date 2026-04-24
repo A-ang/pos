@@ -1,4 +1,4 @@
-import { useCreateBooking, useListCustomers, useListVehicles, getListBookingsQueryKey } from "@workspace/api-client-react";
+import { useCreateBooking, useListCustomers, useListVehicles, getListBookingsQueryKey, getListVehiclesQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -68,7 +68,7 @@ export default function ReservasiTambah() {
 
   const rentalSummary = useMemo(() => {
     if (!selectedStartDate || !selectedEndDate) {
-      return { totalDays: 0, estimatedAmount: 0, invalid: false };
+      return { totalDays: 0, baseAmount: 0, totalAmount: 0, invalid: false };
     }
 
     const start = new Date(selectedStartDate);
@@ -76,19 +76,21 @@ export default function ReservasiTambah() {
     const diff = end.getTime() - start.getTime();
 
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || diff < 0) {
-      return { totalDays: 0, estimatedAmount: 0, invalid: true };
+      return { totalDays: 0, baseAmount: 0, totalAmount: 0, invalid: true };
     }
 
     const totalDays = Math.max(1, Math.ceil(diff / (1000 * 60 * 60 * 24)));
-      const estimatedAmount = ((selectedVehicle?.dailyRate || 0) * totalDays) + (pickupDropoffFee || 0);
+    const baseAmount = (selectedVehicle?.dailyRate || 0) * totalDays;
+    const totalAmount = baseAmount + (pickupDropoffFee || 0);
 
-    return { totalDays, estimatedAmount, invalid: false };
+    return { totalDays, baseAmount, totalAmount, invalid: false };
   }, [selectedStartDate, selectedEndDate, selectedVehicle, pickupDropoffFee]);
 
   const createMutation = useCreateBooking({
     mutation: {
       onSuccess: (data) => {
         queryClient.invalidateQueries({ queryKey: getListBookingsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getListVehiclesQueryKey() });
         toast({ title: "Reservasi berhasil dibuat" });
         setLocation(`/reservasi/${data.id}`);
       }
@@ -254,8 +256,10 @@ export default function ReservasiTambah() {
                       <p className="font-semibold text-slate-900 mt-1">{formatRupiah(pickupDropoffFee || 0)}</p>
                     </div>
                     <div className="rounded-lg bg-white/80 border border-blue-100 p-3 md:col-span-2">
-                      <p className="text-xs text-slate-500">Estimasi Biaya Sewa</p>
-                      <p className="font-semibold text-slate-900 mt-1">{rentalSummary.invalid ? "Tanggal tidak valid" : formatRupiah(rentalSummary.estimatedAmount)}</p>
+                      <p className="text-xs text-slate-500">Estimasi Biaya Sewa Dasar</p>
+                      <p className="font-semibold text-slate-900 mt-1">{rentalSummary.invalid ? "Tanggal tidak valid" : formatRupiah(rentalSummary.baseAmount)}</p>
+                      <p className="text-xs text-slate-500 mt-2">Total Estimasi + Antar Jemput</p>
+                      <p className="font-semibold text-blue-700 mt-1">{rentalSummary.invalid ? "Tanggal tidak valid" : formatRupiah(rentalSummary.totalAmount)}</p>
                     </div>
                   </div>
                 </div>
